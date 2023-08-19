@@ -1,9 +1,10 @@
-package server
+package main
+
+import (
+	"github.com/charleszheng44/tolinks/pkg/server"
+)
 
 func main() {
-	// load server address
-
-	// load the dns list from file
-
-	// run server
+	s := server.NewServer("80", "8090", "/Users/charlesz/.tolinks/db")
+	s.Serve()
 }

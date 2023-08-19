@@ -1,4 +1,4 @@
-module github.com/charelszheng44/tolink
+module github.com/charleszheng44/tolinks
 
 go 1.20
 
