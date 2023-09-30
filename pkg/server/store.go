@@ -35,7 +35,7 @@ type store struct {
 
 func newStore(fileName string) *store {
 	initServerErr := func(err error) {
-		log.Fatalf("fail to initialize the server: %v", err)
+		log.Fatalf("fail to initialize the server: %s", err.Error())
 	}
 	// deserialize the data
 	fs, openErr := os.OpenFile(
@@ -48,9 +48,9 @@ func newStore(fileName string) *store {
 	if openErr != nil {
 		initServerErr(openErr)
 	}
-	routes, err := readDnsEntries(fs)
-	if err != nil {
-		initServerErr(openErr)
+	routes, ioErr := readDnsEntries(fs)
+	if ioErr != nil {
+		initServerErr(ioErr)
 	}
 	// construct the cache
 	return &store{
@@ -64,10 +64,16 @@ func readDnsEntries(f *os.File) (*routes, error) {
 	fScnr := bufio.NewScanner(f)
 	fScnr.Split(bufio.ScanLines)
 	for fScnr.Scan() {
-		tks := strings.Split(fScnr.Text(), ":")
+		tks := strings.Split(fScnr.Text(), "|")
 		if len(tks) != 2 {
 			return nil, errors.New("invalid input format")
 		}
+
+		if tks[1] == "DELETE" {
+			delete(m, tks[0])
+			continue
+		}
+
 		url, err := url.Parse(tks[1])
 		if err != nil {
 			return nil, err
@@ -110,23 +116,22 @@ func (ds *store) getAddress(
 	return r.addr
 }
 
-func (ds *store) addEntry(
+func (ds *store) addOrUpdateEntry(
 	ctx context.Context,
 	domainName, address string,
 ) error {
 	// write through
 	ds.routes.Lock()
 	defer ds.routes.Unlock()
-	if _, exist := ds.routes.m[domainName]; exist {
-		return ErrDomainNameExist
-	}
 
 	u, err := url.Parse(address)
 	if err != nil {
 		return err
 	}
 
-	if _, err := ds.file.WriteString(domainName + ":" + address); err != nil {
+	// the file may exist multiple entries sharing same domainName, but only
+	// the last one will be used.
+	if _, err := ds.file.WriteString(domainName + "|" + address + "\n"); err != nil {
 		return err
 	}
 
@@ -146,4 +151,21 @@ func (ds *store) listAddrs() map[string]string {
 		ret[n] = r.addr
 	}
 	return ret
+}
+
+func (ds *store) deleteEntry(
+	ctx context.Context,
+	domainName string,
+) error {
+	ds.routes.Lock()
+	defer ds.routes.Unlock()
+
+	// mark the entry associated to the domainName as delete
+	if _, err := ds.file.WriteString(domainName + "|" + "DELETE" + "\n"); err != nil {
+		return err
+	}
+
+	// update the cache
+	delete(ds.routes.m, domainName)
+	return nil
 }
