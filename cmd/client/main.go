@@ -1,27 +1,96 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 
+	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 )
 
 func getAddress(
-	ctx context.Context,
+	_ context.Context,
 	serverAddr,
 	domainName string,
 ) (string, error) {
-	return "", nil
+	baseUrl, err := url.Parse(serverAddr)
+	if err != nil {
+		return "", err
+	}
+
+	params := url.Values{}
+	params.Add("domainName", domainName)
+
+	baseUrl.RawQuery = params.Encode()
+
+	resp, err := http.Get(baseUrl.String())
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Read the response body
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", err
+		}
+		return "", errors.Errorf(
+			"Received err code %d with message: %s\n",
+			resp.StatusCode,
+			string(body),
+		)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(body), nil
 }
 
 func listEntries(
-	ctx context.Context,
+	_ context.Context,
 	serverAddr string,
 ) ([]string, error) {
-	return nil, nil
+	baseUrl, err := url.Parse(serverAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Get(baseUrl.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Read the response body
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.Errorf(
+			"Received err code %d with message: %s\n",
+			resp.StatusCode,
+			string(body),
+		)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+
+	ret := []string{}
+	for scanner.Scan() {
+		ret = append(ret, scanner.Text())
+	}
+
+	return ret, nil
 }
 
 func addEntry(
@@ -30,6 +99,40 @@ func addEntry(
 	domainName,
 	address string,
 ) error {
+	baseUrl, err := url.Parse(serverAddr)
+	if err != nil {
+		return err
+	}
+
+	params := url.Values{}
+	params.Add("domainName", domainName)
+	params.Add("address", address)
+
+	baseUrl.RawQuery = params.Encode()
+
+	resp, err := http.Post(
+		baseUrl.String(),
+		"application/x-www-form-urlencoded",
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		// Read the response body
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return errors.Errorf(
+			"Received err code %d with message: %s\n",
+			resp.StatusCode,
+			string(body),
+		)
+	}
+
 	return nil
 }
 
@@ -38,6 +141,42 @@ func delEntry(
 	serverAddr string,
 	domainName string,
 ) error {
+	baseUrl, err := url.Parse(serverAddr)
+	if err != nil {
+		return err
+	}
+
+	params := url.Values{}
+	params.Add("domainName", domainName)
+
+	baseUrl.RawQuery = params.Encode()
+
+	req, err := http.NewRequest("DELETE", baseUrl.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	// Send the request via a client
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		// Read the response body
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return errors.Errorf(
+			"Received err code %d with message: %s\n",
+			resp.StatusCode,
+			string(body),
+		)
+	}
+
 	return nil
 }
 
